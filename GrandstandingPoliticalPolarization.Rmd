@@ -1,0 +1,478 @@
+---
+title: "Exploring the Relationship between Grandstanding and Polarization in Congressional Hearings"
+author: "Zining"
+date: "2023-04-27"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+![Photo of TikTok Hearing](./Photo of Tiktok Hearing.png)
+
+<span style="font-family: Times New Roman; font-size: 12pt"> 
+
+Have you watched the recent Tiktok congressional hearing discussing the protection of American data privacy and online safety for children?
+
+If not, you might have come across snippets of Tiktok's reactions circulating on Instagram.
+Interestingly, the public's response to the hearing seems largely negative, with many questioning why the committee members failed to gather pertinent information by asking relevant questions. 
+ 
+So why do committee members seem to make spontaneous or seemingly irrelevant statements during hearings, instead of directing questions to the witnesses as one would expect? Do they do this on purpose?
+
+This phenomenon is known as grandstanding. According to Ju Yoen Park's paper, *When Do Politicians Grandstand? Measuring Message Politics in Committee Hearings*, grandstanding occurs when committee members use hearings as a platform to send political messages by framing an issue or a party to the public. It is an electoral campaign strategy that committee members use, especially when they lack institutional power to pursue their policy agenda.
+  
+In this replication project, we will focus on the relationship between grandstanding and political polarization, building on Ju Yoen Park's research. While grandstanding statements may appeal to a target audience, they may contribute more to political polarization.Because they have limited opportunities to please voters by making policies representing their interests, committee members will resort to making speeches to please them during hearings. However, in my perspective, grandstanding statements, though may favor their target audience or be rewarded by special interests (Esterling 2007; Ray 2018), have more effect on the growing political polarization. 
+
+This project is a replication project that builds on Ju Yoen Park research, with a more specific focus on discussing grandstanding’s relationship with political polarization. 
+
+</span>
+
+# Datasets
+
+The first two data sets are obtained from Ju Yoen Park research’s replication package on Harvard Dataverse. Both contain hearing transcripts on 12,820 House hearings from the 105th to 114th Congresses. All data was filtered to include only the 112th Congress and later for up-to-date research.
+
+The first data set used is named [Data_speech](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/GSMBFX&version=1.0). It contains statement-level House hearing data: a “grandstanding score” for each individual statement made by committee members (a score calculated in her study using a crowd-sourced supervised learning method).  
+
+The second data set used is named [Data_member](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/GSMBFX&version=1.0). It contains member-level House hearing data: names and a “grandstanding score” for each committee member.
+
+```{r echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+# Loading packages
+options(repos = c(CRAN = "https://cran.rstudio.com/"))   # why do I need this??
+
+
+library(tidyverse)
+library(broom)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(quanteda)
+library(quanteda.textplots)
+
+install.packages("quanteda.textplots")
+
+
+# SPEECH DATA 
+
+hearings <- get(load("/Users/ziningchen/Desktop/Visualizing\ Social\ Data\ /Final\ Project\ /Data_speech.Rdata"))
+
+
+#BASIC DATA CLEANING
+
+hearings <- hearings %>% 
+  filter(congress>=112)
+tail(hearings)
+
+# make key column lower case for merge 
+
+hearings$thomas_name<- str_to_lower(hearings$thomas_name)
+
+# change column name 
+
+hearings <- hearings %>% 
+  rename(name = thomas_name)
+
+head(hearings)
+```
+
+
+The second data set is obtained from [Voteview Github](https://github.com/r-congress/voteviewr)
+The data set provides information on Congress members from the 1st to 118th Congresses, ranging from the state they represent to their political ideology (DIM 1 & DIM 2 scores).
+
+
+```{r echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+HSall <- read.csv("/Users/ziningchen/Desktop/Visualizing\ Social\ Data\ /Final\ Project\ /HSall_members.csv")
+
+# BASIC DATA CLEANING
+
+# getting rid of data before 112th Congress & removing Presidents
+
+HSall <- HSall %>% 
+  filter(congress>=112,congress<=114, chamber != "President")
+
+# removing unused columns 
+HSall$district_code <- NULL
+HSall$conditional<- NULL  #was null column 
+HSall$died<- NULL  # looking at recent congressmen 
+HSall$bioguide_id <- NULL
+HSall$icpsr <- NULL
+HSall$state_icpsr <- NULL
+
+# Making name lower case
+
+HSall$bioname <- str_to_lower(HSall$bioname)
+
+# Renaming key column for merge 
+HSall<- HSall %>% 
+  rename(name=bioname)
+
+head(HSall)
+
+```
+
+
+# Methods and Terms 
+
+### Grandstanding    
+The grandstanding score is a metric created by Ju Yoen Park’s research that quantifies grandstanding in statements. The grandstanding score runs from 0 to 100, with 0 being a statement with no grandstanding and 100 being a statement where grandstanding is very prevalent. 
+
+This is an example of a statement made by congress with a low grandstanding score:
+
+**Now, moving back to previous items of discussion, the SMRs. Just in general, how many applications do you anticipate receiving over the next couple of years, Dr. Lyons?**
+
+This is an example of a statement made by congress with a high grandstanding score:    
+
+**We think that the government is somehow just this benevolent monarch that showers on the people all these gifts. But the reality of it is every single penny that the government uses comes out of a hardworking American taxpayer's pocket. Unfortunately, only half of us are paying taxes anymore. Please explain, because I think these types of hearings allow the community to understand. Every single penny that Ohio needs, where does it come from?**
+
+### Political Polarization    
+Political polarization on a member level was evaluated using the NOMINATE nominate scaling method: DIM 1 and DIM 2 scores. The scoring ranges from -1 to 1, with a score closer to 1 described as conservative whereas a score closer to −1 can be described as liberal. 
+
+DIM1 is typically associated with issues related to economic ideology and redistribution. For instance, DIM1 separates legislators who tend to support higher levels of government spending and intervention in the economy from those who support lower levels of spending and intervention.
+
+DIM2 is associated with social and cultural issues, such as civil rights, abortion, and gun control, separating legislators who tend to be more socially liberal from those who tend to be more socially conservative.
+
+
+```{r echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+# merging Hearing data with HSall members data 
+
+hearings_members <- get(load("/Users/ziningchen/Desktop/Visualizing Social Data /Final Project /Data_member.Rdata"))
+
+# make name lower case for merge 
+
+hearings_members$thomas_name<- str_to_lower(hearings_members$thomas_name)
+
+# change column name 
+
+hearings_members <- hearings_members %>% 
+  rename(name = thomas_name)
+
+# create new data frame with average g scores for each person, then merge it with new column 
+
+# get avg g score per person 
+
+hearings_members_g <- hearings_members %>% 
+  group_by(name) %>%
+  mutate(avg_grandstanding_score = mean(gscore))
+
+
+# filter so only have one person's name once
+hearings_members_g <- hearings_members_g %>%
+  distinct(name, .keep_all = TRUE)
+
+# merging Hearing data with HSall members data 
+Merged <- right_join(hearings_members_g, HSall, by = "name") %>%
+  distinct(name, .keep_all = TRUE)
+head(Merged)
+
+# delete unesscary columns 
+
+# drop NA values
+Merged %>% 
+ drop_na()
+
+
+```
+
+
+## Member-level hypothesis 
+I hypothesized that there exists a correlation between members' political ideology and grandstanding; the more polarized they are, the higher their grandstanding score would be. To observe this correlation, I plotted the DIM score of members against their grandstanding score, obtained by averaging the grandstanding score statements that they made. 
+
+```{r echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+# correlation between 
+# x-axis dim score, y-axis grandstanding 
+
+
+ggplot(data = Merged, aes(x = nokken_poole_dim1, y = avg_grandstanding_score)) +
+  geom_point(aes(color = ifelse(dem == 1, "Democrat", "Republican"))) +
+  labs(title = "DIM 1 vs. Avg Grandstand Score ",
+       x = "DIM 1 ",
+       y = "Average Grandstand Score")+
+  scale_color_manual(values = c("Red","Blue"),
+                     guide = guide_legend(title = "Party"))+
+   theme(legend.position = "bottom")
+
+
+```
+
+
+Fig 1:  
+This figure shows a scatter plot that compares the DIM 1 scores of each member of Congress with their average grandstanding scores. The color of each point indicates the political party of the member, with blue representing the Democratic Party and red representing the Republican Party (as shown in the legend). The points on both sides of the plot are clustered around a DIM score of 0.5/-0.5, with grandstanding scores ranging from the low 10s to the 90s. Interestingly, members with extreme political ideologies did not seem to have lower grandstanding scores, and vice versa. Based on this analysis, there appears to be no correlation between a member's political ideology in DIM1 and the average grandstanding score of their statements.
+
+
+```{r echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+
+
+ggplot(data = Merged, aes(x = nokken_poole_dim2, y = avg_grandstanding_score)) +
+  geom_point(aes(color = ifelse(dem == 1, "Democrat", "Republican"))) +
+  labs(title = "DIM 2 vs. Avg Grandstand Score ",
+       x = "DIM 2 ",
+       y = "Average Grandstand Score")+
+  scale_color_manual(values = c("Red","Blue" ),
+                     guide = guide_legend(title = "Party"))+
+   theme(legend.position = "bottom")
+
+
+```
+
+
+Fig 2:    
+This figure shows a scatter plot of DIM 2 scores against the average grandstanding scores of each member of congress. The color differentiates their political party. Both parties seem to have their points clustered between a DIM 2 score of 0.0 to 0.5/-0.5. Again, no correlation was observed between a member's political ideology in DIM 2 and the average grandstanding score of their statements.
+
+
+
+## Statement-level hypothesis
+Since no correlation was found on the member level, I migrated up to statement-level analysis, looking at the correlation between grandstanding score and the content of each individual statement made by a congress member. I defined polarized issues as controversial and heated issues. Thus, my hypothesis was that statements that contain polarized issues had greater grandstanding scores; since Congress members use grandstanding as a strategy to appeal to their constituents, they would be more likely to utilize this strategy towards a controversial topic where two sides have distinct stances and less common ground.
+
+The two highly polarized issues I chose were the US-China foreign relationship (identified by the keyword “China”) and issues surrounding former President Trump (identified by the keyword “Trump”). First, I separated the statements that mentioned these topics from those that didn't. I then plotted the probability density of grandstanding scores for each set of statements, creating a distribution plot. To further concrete my findings, I performed a T-Test to highlight the significant differences in the distribution of grandstanding scores between the two groups of statements. 
+
+
+```{r echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+# KEYWORD: CHINA ANALYSIS 
+
+China_speeches <- hearings %>%
+  mutate(match = ifelse(str_detect(speech, pattern = "China"), 1, 0))
+
+# Calculate average gscore for each group based on "match" column
+China_speeches_grouped <- China_speeches %>%
+  group_by(match) %>%
+  summarise(avg_grandstanding_score = mean(gscore, na.rm = TRUE))
+
+
+match1_gscore_China <- China_speeches %>%
+  filter(match == 1) %>%
+  pull(gscore)
+
+match0_gscore_China <-China_speeches %>%
+  filter(match == 0) %>%
+  pull(gscore)
+
+
+
+combined_data_China <- rbind(data.frame(gscore = match0_gscore_China, match = "Match 0"),
+                       data.frame(gscore = match1_gscore_China, match = "Match 1"))
+
+# Create the distribution plot
+ggplot(combined_data_China, aes(x = gscore, fill = match)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Distribution of gscore by Controversial Topics",
+       x = "Grandstanding Score",
+       y = "Density") +
+  scale_fill_discrete(name = "Controvisal Topics Keyword: China ", labels = c("Not Mentioned","Mentioned China"))+ 
+  theme(legend.position = "bottom")
+
+
+```
+
+
+Fig 3:    
+The red curve peaks around a grandstanding score of 30, whereas the blue curve peaks around a grandstanding score of 60, suggesting that statements from the group are more likely to have grandstanding scores around those values. This graph indicates that statements tend to generally have a higher grandstanding score if they contain the controversial keyword China. 
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# T-TEST FOR CHINA 
+
+t.test_result <- t.test(match1_gscore_China, match0_gscore_China )
+
+# Table making 
+
+ttest_table <- tidy(t.test_result) %>% 
+  mutate(`p-value` = "< 2.2e-16",
+         `t-value` = sprintf("%.2f", statistic),
+        `95% confidence interval` = sprintf("%.2f - %.2f", conf.low, conf.high),
+         `Mean of Mentioned`=  estimate1,
+         `Mean of Not Mentioned` = estimate2,
+        `Method` = method) 
+
+
+ttest_table<- ttest_table %>%
+  select(Method, `Mean of Not Mentioned`, `Mean of Mentioned`,`95% confidence interval`,`t-value`,`p-value`) %>%
+  kable(format = "html",
+        caption = "T-test Results for G-Scores of Two Congressional Hearing Samples") %>%
+  kable_styling(full_width = TRUE) %>%
+  column_spec(6, bold = TRUE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "gray")
+
+
+ttest_table
+
+```
+
+
+Table 1:       
+Table 1 displayed the T-test results for G score of the two samples separated by whether they mentioned China or not. The mean grandstanding score of the sample that mentioned China is 57.73 while the ones that didn’t mention China had a mean of 42.72. The difference between the two means was found to be statistically significant, with a p-value less than 0.05.
+
+
+```{r echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+# KEYWORD: TRUMP ANALYSIS 
+
+Trump_speeches <- hearings %>%
+  mutate(match = ifelse(str_detect(speech, pattern = "Trump"), 1, 0))
+
+
+# Calculate average gscore for each group based on "match" column
+Trump_speeches_grouped <- Trump_speeches %>%
+  group_by(match) %>%
+  summarise(avg_grandstanding_score = mean(gscore, na.rm = TRUE))
+
+
+match1_gscore_Trump <- Trump_speeches %>%
+  filter(match == 1) %>%
+  pull(gscore)
+
+match0_gscore_Trump <-Trump_speeches %>%
+  filter(match == 0) %>%
+  pull(gscore)
+
+
+# distributution plot 
+combined_data_Trump <- rbind(data.frame(gscore = match0_gscore_Trump, match = "Match 0"),
+                       data.frame(gscore = match1_gscore_Trump, match = "Match 1"))
+
+# Create the distribution plot
+ggplot(combined_data_Trump, aes(x = gscore, fill = match)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Distribution of grandstanding score by Controversial Topics",
+       x = "Grandstanding Score",
+       y = "Probability Density") +
+  scale_fill_discrete(name = "Controvisal Topics Keyword: Trump ", labels = c("Not Mentioned", " Mentioned")) + 
+  theme(legend.position = "bottom")
+
+``` 
+
+
+Fig 4:     
+The red curve peaks around a grandstanding score of 30, whereas the blue curve peaks around a grandstanding score of 60, suggesting that statements from the group are more likely to have grandstanding scores around those values.This graph indicates that statements tend to generally have a higher grandstanding score if they contain the controversial keyword Trump. 
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# T-TEST FOR TRUMP 
+
+t.test_result <- t.test(match1_gscore_Trump,match0_gscore_Trump )
+
+#Table making 
+
+ttest_table <- tidy(t.test_result) %>% 
+  mutate(`p-value` = sprintf("%.2e", p.value),
+         `t-value` = sprintf("%.2f", statistic),
+        `95% confidence interval` = sprintf("%.2f - %.2f", conf.low, conf.high),
+         `Mean of Mentioned`=  estimate1,
+         `Mean of Not Mentioned` = estimate2,
+        `Method` = method) 
+
+
+ttest_table<- ttest_table %>%
+  select(Method, `Mean of Not Mentioned`, `Mean of Mentioned`,`95% confidence interval`,`t-value`,`p-value`) %>%
+  kable(format = "html",
+        caption = "T-test Results for G-Scores of Two Congressional Hearing Samples") %>%
+  kable_styling(full_width = TRUE) %>%
+  column_spec(6, bold = TRUE) %>%
+  row_spec(0, bold = TRUE, color = "white", background = "gray")
+
+ttest_table
+
+```
+
+
+Table 2:     
+Table 2 displays the T-test results for G score of the two samples separated by whether they mentioned Trump or not. The mean grandstanding score of the sample that mentioned Trump is 63.22 while the ones that didn’t mention Trump had a mean of 42.91.The difference between the two means was found to be statistically significant, with a p-value less than 0.05.
+
+
+
+## Title-level hypothesis
+To expand my analysis beyond statements, I examined the relationship between grandstanding scores and the subject matter of congressional hearings. My hypothesis was that hearings on polarized topics would have higher average grandstanding scores than those on less controversial issues.
+
+To test this hypothesis, I calculated the average grandstanding scores for a set of hearings and then separated them into two groups: those with the top 25% of grandstanding scores and those with the bottom 25%. To visualize the differences in subject matter between these two groups, I created a text cloud that showed the frequency of words appearing in the titles of each group. The size of each word in the cloud represents how often it appeared in the hearing title of the group. Notice that the words are not complete since words in the analysis were stemmed, meaning that words with the same root were grouped together. For example, "services," "serviced," and "service" would all be grouped together under the root "servic."
+
+
+```{r, echo=FALSE}
+
+Commitee_high <- hearings %>%
+  filter(gscore>=80,congress==114) %>% 
+  group_by(title) %>% 
+  arrange(desc(gscore)) %>% 
+  summarise(avg_g_score = median(gscore, na.rm = TRUE)) %>% 
+  mutate(docname = paste0("doc_", row_number())) %>% 
+  mutate(text_id = 1:n())
+
+
+
+Commitee_high<- Commitee_high %>% 
+  mutate(text_id = 1:n())
+
+Commitee_meta<- corpus(x = Commitee_high,
+                          docid_field = 'text_id',
+                            text_field = "title")
+
+
+
+
+Commitee_meta_high_gs <- Commitee_meta %>%
+  tokens(remove_symbols = TRUE, remove_punct = TRUE) %>% 
+  dfm(tolower = TRUE) %>% 
+  dfm_wordstem() %>%
+  dfm_remove(c("u.", "h.r","va","2015","2016","2017","year","examin","act","oversight","depart","secur","part","program","secur","ii"))%>% dfm_wordstem()
+
+Commitee_meta_high_gs <-dfm_remove(Commitee_meta_high_gs, pattern = stopwords())
+
+Commitee_high_gs_cloud<-textplot_wordcloud(Commitee_meta_high_gs, max_words = 50)
+
+```
+
+
+Fig 5:    
+Most notable words in the text cloud are: Nuclear, Iran, Feder, Administr
+
+```{r, echo=FALSE}
+
+Commitee_low <- hearings %>%
+  filter(gscore<=20,congress==114) %>% 
+  group_by(title) %>%
+  summarise(avg_g_score = median(gscore, na.rm = TRUE)) %>% 
+  arrange(desc(avg_g_score ))
+  
+
+
+
+Commitee_low <- Commitee_low  %>% 
+  mutate(text_id = 1:n())
+
+Commitee_meta<- corpus(x = Commitee_low ,
+                          docid_field = 'text_id',
+                            text_field = "title")
+
+
+
+Commitee_meta_low_gs <- Commitee_meta %>%
+  tokens(remove_symbols = TRUE, remove_punct = TRUE) %>% 
+  dfm(tolower = TRUE) %>% 
+  dfm_wordstem() %>%
+  dfm_remove(c("u.", "h.r","va","2015","2016","2017","year","examin","act","oversight","depart","secur","part","program","secur","hear")) %>% dfm_wordstem()
+
+
+
+Commitee_meta_low_gs<-dfm_remove(Commitee_meta_low_gs, pattern = stopwords())
+
+
+Commitee_low_gs_cloud<-textplot_wordcloud(Commitee_meta_low_gs, max_words = 50)
+
+```
+
+
+Fig 6:     
+Most notable words in the text cloud are: Nation, Review, Fiscal, Budget
+
+
+Comparing between the two graphs and their most notable words, we can sense that  the words that appeared more frequently in the group with high grandstanding scores were associated with more polarizing issues. On the other hand, the words that were most frequent in the title of the group with low grandstanding scores were more neutral and related to financial issues such as the treasury. This suggests that there is a correlation between the subject matter of a hearing and the overall grandstanding score member’s statements made within the hearing; more controversial and polarizing hearing tend to encourage higher degree of grandstanding from members. 
+
+
+# Conclusion 
+
+This replication research project that extends on the work of Ju Yeon Park seeks to reveal a potential correlation between grandstanding and political polarization. The first member level analysis demonstrated that there was no correlation between a Congress member's political polarization (how extreme their political ideologies were) and their grandstanding behavior; Congress members that had more extreme political ideologies (shown by a DIM1 or DIM 2 score close to 1 / -1), did not necessarily have higher grandstanding scores. However, grandstanding scores have a correlation with the content of their statements themselves; shown by the statement-level analysis, statements that included keywords related to controversial/polarized topics had a significantly higher grandstanding score than statements that did not include those controversial topics. On a broader scope, the grandstand also correlated with the subject of hearings. When analyzing the titles of hearings, words such as "Iran" and “nuclear”, words that represent heated/polarized topics, appear more frequently in hearings that have a higher grandstanding score. On the other side of the scale, words such as "fiscal", and "budget" appeared more frequently in hearing with low grandstanding scores. In conclusion, the three levels of the analysis suggest that grandstanding behavior in congressional hearings is more closely correlated with the topics being discussed and the statements made rather than the member's political ideology. Furthermore, grandstanding behavior is more apparent when topics of discussion are heated and polarized. This phenomenon can be reasoned as followed:  
+
+When issues are polarized, there is a great divide between the two opposing sides, leaving little room for a middle ground; there is a greater probability that constituents picked a side to stand on, sides that are very distinct. Because of this distinct grouping and separation, it is easier for Congress members to express their opinion and please more voters they represent and serve by grandstanding in hearings. However, for the same reason, grandstanding tactics may also contribute to further polarization in society.
+
+Future research could explore the long-term effects of grandstanding on political polarization and examine potential strategies for mitigating this behavior in hearings, ultimately reducing political polarization and promoting a more collaborative approach to problem-solving–the original intent and primary objective of congressional hearings. 
+
+      
+
